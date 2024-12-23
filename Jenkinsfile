@@ -11,7 +11,7 @@ pipeline {
     stages {
         stage('Checkout Code') {
             steps {
-                checkout scm
+                git 'https://github.com/Talfaza/Health-Check-AWS.git'
             }
         }
         stage('Build Docker Image') {
