@@ -1,47 +1,63 @@
 pipeline {
     agent any
+
     environment {
-        DOCKER_IMAGE = 'healthCheckAWS'  
-        AWS_REGION = 'us-east-1'
-        ECR_REPOSITORY_URI = '699475921831.dkr.ecr.us-east-1.amazonaws.com/healthcheckaws'  
-        EC2_INSTANCE_IP = '54.242.12.114'  
-        EC2_SSH_KEY_PATH = '/home/ec2-user/Ec2.pem'
-        EC2_USER = 'ec2-user'  
+        AWS_REGION = 'us-east-1'  
+        AWS_ACCOUNT_ID = '699475921831'  
+        ECR_REPO = 'healthcheckaws'  
+        IMAGE_NAME = 'healthcheckaws'  
+        EC2_KEY_PATH = '/home/ec2-user/Ec2.pem'
+        EC2_PUBLIC_IP= '54.242.12.114'
     }
+
     stages {
         stage('Checkout Code') {
             steps {
-                git 'https://github.com/Talfaza/Health-Check-AWS.git'
+                git branch: 'main', credentialsId: 'github', url: 'https://github.com/Talfaza/Health-Check-AWS.git'
             }
         }
+
         stage('Build Docker Image') {
             steps {
                 script {
-                    sh "docker build -t $DOCKER_IMAGE ."
+                    sh 'docker build --no-cache -t $IMAGE_NAME .'
                 }
             }
         }
+
         stage('Push to ECR') {
             steps {
                 withAWS(credentials: 'aws-credentials', region: "$AWS_REGION") {
                     script {
+                        def ecrLogin = sh(script: "aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com", returnStdout: true).trim()
+
+                        sh "docker tag $IMAGE_NAME:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_NAME"
+
+                        sh "docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_NAME"
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to EC2') {
+            steps {
+                withAWS(credentials: 'aws-credentials', region: "$AWS_REGION") {
+                    script {
                         sh '''
-                        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
-                        docker tag $DOCKER_IMAGE $ECR_REPOSITORY_URI:latest
-                        docker push $ECR_REPOSITORY_URI:latest
+                            ssh -o StrictHostKeyChecking=no -i $EC2_KEY_PATH ec2-user@$EC2_PUBLIC_IP "docker pull $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_NAME && docker run -d $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_NAME"
                         '''
                     }
                 }
             }
         }
-        stage('Deploy to EC2') {
-            steps {
-                script {
-                    sh """
-                    ssh -i $EC2_SSH_KEY_PATH $EC2_USER@$EC2_INSTANCE_IP 'docker pull $ECR_REPOSITORY_URI:latest && docker run -d --name my-container $ECR_REPOSITORY_URI:latest'
-                    """
-                }
-            }
+    }
+
+    post {
+        success {
+            echo 'Pipeline executed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed.'
         }
     }
 }
