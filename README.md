@@ -4,4 +4,4 @@ This project will be used to monitor cloud performance and health and automatica
 
 # Project Architecture (WILL CHANGE !!!) :
 
-![Architecture](img/2024-12-24-01-18)
+![Architecture](img/2024-12-24-01-18.png)
